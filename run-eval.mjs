@@ -82,7 +82,10 @@ async function main() {
   const workspace = requireInput("workspace");
   const harness = requireInput("harness");
   const dataset = requireInput("dataset");
-  const images = input("images") ? JSON.parse(input("images")) : undefined;
+  // An empty images map (a link with no service slots renders images: '{}') means "no pins" — treating it as
+  // set made push fires attempt an empty re-pin (400 "pins is empty", found live).
+  const parsedImages = input("images") ? JSON.parse(input("images")) : undefined;
+  const images = parsedImages && Object.keys(parsedImages).length > 0 ? parsedImages : undefined;
   const judges = input("judges") ? JSON.parse(input("judges")) : undefined;
   const runtime = input("runtime");
   const timeoutMs = Number(input("timeout-minutes", "30")) * 60_000;
