@@ -102,14 +102,23 @@ async function main() {
   const failOnRegression =
     input("fail-on-regression") !== undefined ? input("fail-on-regression") === "true" : mode === "pr"; // PR defaults true (fail the check on regression), push defaults false (report only)
 
-  const bearer = input("api-key") ?? (await githubOidcToken());
-  const headers = {
+  const apiKey = input("api-key");
+  let bearer = apiKey ?? (await githubOidcToken());
+  const headersFor = () => ({
     authorization: `Bearer ${bearer}`,
     "x-everdict-workspace": workspace,
     "content-type": "application/json",
-  };
+  });
   const api = async (method, path, body) => {
-    const res = await fetch(`${apiUrl}${path}`, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const send = () =>
+      fetch(`${apiUrl}${path}`, { method, headers: headersFor(), ...(body ? { body: JSON.stringify(body) } : {}) });
+    let res = await send();
+    // GitHub OIDC tokens live ~5 minutes — a long eval outlives the one fetched at start, and the poll loop then
+    // dies 401 mid-wait (found live). Under federation, refresh the token once on a 401 and retry.
+    if (res.status === 401 && !apiKey) {
+      bearer = await githubOidcToken();
+      res = await send();
+    }
     const text = await res.text();
     const json = text ? JSON.parse(text) : undefined;
     if (!res.ok) throw new Error(`${method} ${path} → ${res.status}: ${json?.message ?? text}`);
